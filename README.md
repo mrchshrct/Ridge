@@ -10,6 +10,10 @@ Ridge is a small panel that lives at the top of your Windows screen. Hover to br
 
 [![CI](https://github.com/mrchshrct/Ridge/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/mrchshrct/Ridge/actions/workflows/ci.yml)
 
+<p align="center">
+  <img src="screenshots/ridge-settings.png" alt="Ridge settings panel with update controls" width="767">
+</p>
+
 ## Made to stay out of your way
 
 - **Music at a glance** — see the current track and album art, control playback, and scrub through a song.

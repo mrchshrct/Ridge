@@ -1067,7 +1067,7 @@ function SettingsTab({
           onClick={() => onToggleAutoUpdate(!autoUpdate)}
           className="mt-1 flex w-full items-center justify-between rounded-lg px-1 py-1 text-left outline-none focus-visible:ring-2 focus-visible:ring-sky-300/70"
         >
-          <span className="text-[11px] text-zinc-300">Check automatically</span>
+          <span className="text-[11px] text-zinc-300">Check for updates automatically</span>
           <span
             className={`relative h-4 w-7 rounded-full transition-colors ${
               autoUpdate ? "bg-sky-500/80" : "bg-zinc-700"

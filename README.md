@@ -1,6 +1,8 @@
 # Ridge
 
-Ridge is a Windows desktop productivity panel built with Tauri 2, Rust, React, and TypeScript. Frontend and Rust sources live in the repository root.
+Ridge is a compact panel for the top of your Windows screen. Hover to open quick access to your music controls, clipboard history, screenshots, file shelf, and calendar—then move on without losing your place.
+
+Built for Windows with Tauri, Rust, React, and TypeScript.
 
 [![CI](https://github.com/mrchshrct/Ridge/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/mrchshrct/Ridge/actions/workflows/ci.yml)
 

@@ -44,13 +44,13 @@ The File Shelf watches the current Windows Pictures known folder's `Screenshots`
 
 The Settings tab lets you unlock and drag the panel to a new screen position, lock it in place, or fully exit Ridge. The lock state and panel position are saved in the app configuration directory.
 
-The Updates section displays the installed version and can check for signed releases from the public `mrchshrct/Ridge` GitHub repository. Automatic checks run at startup and once per day; Ridge always asks before installing an update.
+The Updates section displays the installed version and can check for signed GitHub releases. Automatic checks run at startup and once per day; Ridge always asks before installing an update. The current repository is private, so installed apps cannot access its release manifest without authentication. Do not embed a GitHub token in the app; enable updater checks for end users only after providing a public release manifest and signed package URL.
 
 ### Publishing updates
 
-The GitHub Actions release workflow runs for version tags (`v*`). Before tagging a release, update the version in `tauri.conf.json`, `Cargo.toml`, and `package.json` to match the tag. Add the contents of the local Tauri signing private key (`%USERPROFILE%\.tauri\ridge.key`) to the repository's Actions secrets as `TAURI_SIGNING_PRIVATE_KEY`. Never commit or publish the private key. The matching public key is embedded in `tauri.conf.json`.
+The GitHub Actions release workflow runs for version tags (`v*`). Before tagging a release, update the version in `tauri.conf.json`, `Cargo.toml`, and `package.json` to match the tag. Add the contents of the local Tauri signing private key (`%USERPROFILE%\.tauri\ridge.key`) to the private repository's Actions secrets as `TAURI_SIGNING_PRIVATE_KEY`. Never commit or publish the private key. The matching public key is embedded in `tauri.conf.json`.
 
-The workflow builds the Windows installers and signed NSIS updater package, then uploads `latest.json` to the GitHub Release. The app checks that manifest and verifies the package signature before installation.
+The workflow builds the Windows installers and signed NSIS updater package, then uploads `latest.json` to the GitHub Release. The app verifies the package signature before installation. Since GitHub does not expose private release assets to unauthenticated updater clients, these private release assets are for owner testing only; public distribution requires a publicly accessible manifest and package URL.
 
 The expanded 620×260 panel uses a vertical icon sidebar with the active section name in its header. The media player follows a compact wide layout with a 128px cover, playback controls, and a timeline under the track details.
 

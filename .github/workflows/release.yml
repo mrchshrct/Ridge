@@ -64,6 +64,37 @@ jobs:
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
 
+      # --- Windows code signing (optional, requires certificate) ---
+      - name: Sign Windows binaries
+        shell: pwsh
+        if: ${{ secrets.WINDOWS_CERTIFICATE != '' }}
+        run: |
+          $certPath = "$env:RUNNER_TEMP\codesign.pfx"
+          $certBytes = [Convert]::FromBase64String($env:WINDOWS_CERTIFICATE)
+          [IO.File]::WriteAllBytes($certPath, $certBytes)
+
+          $signtool = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin" -Recurse -Filter "signtool.exe" |
+            Where-Object { $_.FullName -match "x64" } | Select-Object -First 1 -ExpandProperty FullName
+          if (-not $signtool) {
+            throw "signtool.exe not found."
+          }
+
+          $filesToSign = @(
+            "target\release\bundle\nsis\*.exe",
+            "target\release\bundle\msi\*.msi"
+          )
+          foreach ($pattern in $filesToSign) {
+            Get-ChildItem $pattern | ForEach-Object {
+              & $signtool sign /f $certPath /p $env:WINDOWS_CERTIFICATE_PASSWORD /tr http://timestamp.digicert.com /td sha256 /fd sha256 $_.FullName
+              if ($LASTEXITCODE -ne 0) { throw "Failed to sign $($_.FullName)" }
+            }
+          }
+
+          Remove-Item $certPath -Force
+        env:
+          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+
       - name: Prepare release assets
         shell: pwsh
         run: |

@@ -54,17 +54,26 @@ cargo fmt --all      # применить форматирование Rust
 
 По умолчанию приложение не подписано доверенным сертификatem, поэтому Windows SmartScreen предупреждает при установке.
 
-Для публикации без предупреждений:
-
-1. Получите сертификат подписи кода (Code Signing Certificate) от CA
-2. Экспортируйте в `.pfx` и закодируйте в base64:
+### Вариант 1: Сертификат от CA (Code Signing Certificate)
+1. Купить сертификат у CA (Sectigo, DigiCert и др.) — ~$200-400/год
+2. Экспортировать в `.pfx`, закодировать в base64:
    ```powershell
    [Convert]::ToBase64String([IO.File]::ReadAllBytes("codesign.pfx")) | Set-Clipboard
    ```
-3. Добавьте в GitHub Secrets:
-   - `WINDOWS_CERTIFICATE` — base64-строка сертификата
-   - `WINDOWS_CERTIFICATE_PASSWORD` — пароль от `.pfx`
-4. CI автоматически подпишет `.exe` и `.msi` при наличии секретов (шаг `Sign Windows binaries` в `release.yml`)
+3. Добавить в GitHub Secrets: `WINDOWS_CERTIFICATE` (base64) и `WINDOWS_CERTIFICATE_PASSWORD`
+
+### Вариант 2: Azure Trusted Signing (~$10/мес)
+1. Создать аккаунт Azure Trusted Signing: https://learn.microsoft.com/azure/trusted-signing/
+2. Создать Trusted Signing Account и Certificate Profile
+3. Зарегистрировать приложение в Azure AD (App Registration)
+4. Добавить в GitHub Secrets:
+   - `AZURE_CLIENT_ID` — Client ID приложения
+   - `AZURE_TENANT_ID` — Tenant ID
+   - `AZURE_CLIENT_SECRET` — Client Secret
+   - `AZURE_TRUSTED_SIGNING_ACCOUNT` — имя аккаунта Trusted Signing
+   - `AZURE_TRUSTED_SIGNING_PROFILE` — имя профиля сертификата
+   - `AZURE_TRUSTED_SIGNING_ENDPOINT` — endpoint (напр. `https://eus.codesigning.azure.net`)
+5. CI автоматически подпишет `.exe` и `.msi` при наличии секретов
 
 Без секретов сборка проходит нормально, но бинарники останутся неподписанными.
 

@@ -250,10 +250,6 @@ function useUpdater() {
   }, []);
 
   const installUpdate = useCallback(async (update: Update) => {
-    if (!window.confirm(`Install Ridge ${update.version} now? Ridge will close during installation.`)) {
-      return;
-    }
-
     setIsInstalling(true);
     setUpdateStatus(`Downloading Ridge ${update.version}...`);
     try {
@@ -465,6 +461,7 @@ export default function NotchPanel() {
   );
 
   const hovering = useRef(false);
+  const [confirmInstall, setConfirmInstall] = useState(false);
   const draggingFiles = useRef(false);
   const draggingFilesOut = useRef(false);
   const draggingPanel = useRef(false);
@@ -935,13 +932,16 @@ export default function NotchPanel() {
                       isInstalling={updater.isInstalling}
                       updateStatus={updater.updateStatus}
                       availableUpdate={updater.availableUpdate}
+                      confirmInstall={confirmInstall}
                       onToggleLock={() => void togglePanelLock()}
                       onMove={beginPanelMove}
                       onResetPosition={() => void resetPanelPosition()}
                       onQuit={() => void quitApp()}
                       onToggleAutoUpdate={updater.toggleAutoUpdate}
                       onCheckUpdates={() => void updater.checkForUpdates()}
-                      onInstallUpdate={(update) => void updater.installUpdate(update)}
+                      onInstallUpdate={() => setConfirmInstall(true)}
+                      onConfirmInstall={(update) => void updater.installUpdate(update)}
+                      onCancelInstall={() => setConfirmInstall(false)}
                     />
                   )}
                 </div>
@@ -1076,6 +1076,7 @@ function SettingsTab({
   isInstalling,
   updateStatus,
   availableUpdate,
+  confirmInstall,
   onToggleLock,
   onMove,
   onResetPosition,
@@ -1083,6 +1084,8 @@ function SettingsTab({
   onToggleAutoUpdate,
   onCheckUpdates,
   onInstallUpdate,
+  onConfirmInstall,
+  onCancelInstall,
 }: {
   locked: boolean;
   error: string;
@@ -1092,6 +1095,7 @@ function SettingsTab({
   isInstalling: boolean;
   updateStatus: string;
   availableUpdate: Update | null;
+  confirmInstall: boolean;
   onToggleLock: () => void;
   onMove: (event: ReactPointerEvent<HTMLButtonElement>) => void;
   onResetPosition: () => void;
@@ -1099,6 +1103,8 @@ function SettingsTab({
   onToggleAutoUpdate: (enabled: boolean) => void;
   onCheckUpdates: () => void;
   onInstallUpdate: (update: Update) => void;
+  onConfirmInstall: (update: Update) => void;
+  onCancelInstall: () => void;
 }) {
   const LockIcon = locked ? LockKeyhole : UnlockKeyhole;
 
@@ -1200,7 +1206,7 @@ function SettingsTab({
           >
             {isChecking ? "Checking..." : "Check updates"}
           </button>
-          {availableUpdate && (
+          {availableUpdate && !confirmInstall && (
             <button
               type="button"
               disabled={isInstalling}
@@ -1209,6 +1215,29 @@ function SettingsTab({
             >
               {isInstalling ? "Installing..." : `Install ${availableUpdate.version}`}
             </button>
+          )}
+          {availableUpdate && confirmInstall && (
+            <div className="flex flex-col gap-1.5 rounded-lg border border-sky-400/20 bg-sky-500/10 p-2">
+              <p className="text-[10px] text-sky-200">
+                Install Ridge {availableUpdate.version} now? Ridge will close during installation.
+              </p>
+              <div className="flex gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => onConfirmInstall(availableUpdate)}
+                  className="flex-1 rounded-md bg-sky-500/20 px-2 py-1 text-[11px] font-medium text-sky-100 transition-colors hover:bg-sky-500/30"
+                >
+                  Confirm
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onCancelInstall()}
+                  className="flex-1 rounded-md bg-white/5 px-2 py-1 text-[11px] font-medium text-zinc-300 transition-colors hover:bg-white/10"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
           )}
         </div>
       </div>

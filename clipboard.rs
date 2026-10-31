@@ -79,13 +79,34 @@ pub fn start_monitor(history: ClipboardHistory) -> std::io::Result<()> {
     #[cfg(windows)]
     {
         thread::Builder::new()
-            .name("clipboard-history".to_string())
+            .name("clipboard-history-supervisor".to_string())
             .spawn(move || loop {
-                if let Err(error) = history.capture() {
-                    eprintln!("clipboard monitor failed: {error}");
-                    thread::sleep(ClipboardDuration::from_secs(1));
-                } else {
-                    thread::sleep(ClipboardDuration::from_millis(150));
+                let history_clone = history.clone();
+                let handle = thread::Builder::new()
+                    .name("clipboard-history".to_string())
+                    .spawn(move || {
+                        if let Err(error) =
+                            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| loop {
+                                if let Err(error) = history_clone.capture() {
+                                    eprintln!("clipboard monitor failed: {error}");
+                                    thread::sleep(ClipboardDuration::from_secs(1));
+                                } else {
+                                    thread::sleep(ClipboardDuration::from_millis(150));
+                                }
+                            }))
+                        {
+                            eprintln!("clipboard monitor thread panicked: {error:?}");
+                        }
+                    });
+                match handle {
+                    Ok(h) => {
+                        let _ = h.join();
+                        thread::sleep(Duration::from_secs(2));
+                    }
+                    Err(e) => {
+                        eprintln!("failed to spawn clipboard monitor thread: {e}");
+                        thread::sleep(Duration::from_secs(2));
+                    }
                 }
             })?;
     }
@@ -104,56 +125,103 @@ pub fn start_screenshot_watcher(app: tauri::AppHandle) -> notify::Result<()> {
 
     use tauri::Manager;
 
-    let directory = app
-        .path()
-        .picture_dir()
-        .map_err(|error| notify::Error::io(std::io::Error::other(error)))?
-        .join("Screenshots");
-    std::fs::create_dir_all(&directory).map_err(notify::Error::io)?;
-
-    let (sender, receiver) = mpsc::channel();
-    let mut watcher: RecommendedWatcher = notify::recommended_watcher(move |event| {
-        if sender.send(event).is_err() {
-            eprintln!("screenshot watcher event receiver stopped");
-        }
-    })?;
-    watcher.watch(&directory, RecursiveMode::NonRecursive)?;
-
     thread::Builder::new()
-        .name("screenshot-folder-watcher".to_string())
-        .spawn(move || {
-            let _watcher = watcher;
-            let mut emitted = HashSet::new();
-            loop {
-                match receiver.recv() {
-                    Ok(Ok(event)) => {
-                        for path in event.paths {
-                            if !is_png(&path) {
-                                continue;
-                            }
-                            if matches!(&event.kind, notify::EventKind::Remove(_)) {
-                                emitted.remove(&normalize_event_path(&path));
-                                continue;
-                            }
-                            if let Some(path) = wait_for_completed_png(&path) {
-                                if !emitted.insert(path.clone()) {
-                                    continue;
+        .name("screenshot-folder-watcher-supervisor".to_string())
+        .spawn(move || loop {
+            let app = app.clone();
+
+            let directory = match app.path().picture_dir() {
+                Ok(pictures_dir) => pictures_dir.join("Screenshots"),
+                Err(error) => {
+                    eprintln!("screenshot watcher could not find Pictures folder: {error}");
+                    thread::sleep(Duration::from_secs(2));
+                    continue;
+                }
+            };
+
+            if let Err(error) = std::fs::create_dir_all(&directory) {
+                eprintln!("screenshot watcher could not create Screenshots folder: {error}");
+                thread::sleep(Duration::from_secs(2));
+                continue;
+            }
+
+            let (sender, receiver) = mpsc::channel();
+            let mut watcher: RecommendedWatcher = match notify::recommended_watcher(move |event| {
+                if sender.send(event).is_err() {
+                    eprintln!("screenshot watcher event receiver stopped");
+                }
+            }) {
+                Ok(w) => w,
+                Err(error) => {
+                    eprintln!("screenshot watcher could not create watcher: {error}");
+                    thread::sleep(Duration::from_secs(2));
+                    continue;
+                }
+            };
+
+            if let Err(error) = watcher.watch(&directory, RecursiveMode::NonRecursive) {
+                eprintln!("screenshot watcher could not watch folder: {error}");
+                thread::sleep(Duration::from_secs(2));
+                continue;
+            }
+
+            let handle = thread::Builder::new()
+                .name("screenshot-folder-watcher".to_string())
+                .spawn(move || {
+                    let _watcher = watcher;
+                    if let Err(error) =
+                        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                            let mut emitted = HashSet::new();
+                            loop {
+                                match receiver.recv() {
+                                    Ok(Ok(event)) => {
+                                        for path in event.paths {
+                                            if !is_png(&path) {
+                                                continue;
+                                            }
+                                            if matches!(&event.kind, notify::EventKind::Remove(_)) {
+                                                emitted.remove(&normalize_event_path(&path));
+                                                continue;
+                                            }
+                                            if let Some(path) = wait_for_completed_png(&path) {
+                                                if !emitted.insert(path.clone()) {
+                                                    continue;
+                                                }
+                                                if let Err(error) = tauri::Emitter::emit(
+                                                    &app,
+                                                    "screenshot-captured",
+                                                    path.to_string_lossy().into_owned(),
+                                                ) {
+                                                    eprintln!(
+                                                        "failed to emit screenshot path: {error}"
+                                                    );
+                                                }
+                                            }
+                                        }
+                                    }
+                                    Ok(Err(error)) => {
+                                        eprintln!("screenshot folder watcher failed: {error}")
+                                    }
+                                    Err(error) => {
+                                        eprintln!("screenshot folder watcher stopped: {error}");
+                                        break;
+                                    }
                                 }
-                                if let Err(error) = tauri::Emitter::emit(
-                                    &app,
-                                    "screenshot-captured",
-                                    path.to_string_lossy().into_owned(),
-                                ) {
-                                    eprintln!("failed to emit screenshot path: {error}");
-                                }
                             }
-                        }
+                        }))
+                    {
+                        eprintln!("screenshot folder watcher thread panicked: {error:?}");
                     }
-                    Ok(Err(error)) => eprintln!("screenshot folder watcher failed: {error}"),
-                    Err(error) => {
-                        eprintln!("screenshot folder watcher stopped: {error}");
-                        break;
-                    }
+                });
+
+            match handle {
+                Ok(h) => {
+                    let _ = h.join();
+                    thread::sleep(Duration::from_secs(2));
+                }
+                Err(e) => {
+                    eprintln!("failed to spawn screenshot folder watcher thread: {e}");
+                    thread::sleep(Duration::from_secs(2));
                 }
             }
         })
@@ -162,7 +230,7 @@ pub fn start_screenshot_watcher(app: tauri::AppHandle) -> notify::Result<()> {
     Ok(())
 }
 
-fn is_png(path: &Path) -> bool {
+pub(crate) fn is_png(path: &Path) -> bool {
     path.extension()
         .and_then(|extension| extension.to_str())
         .is_some_and(|extension| extension.eq_ignore_ascii_case("png"))
@@ -185,7 +253,7 @@ fn wait_for_completed_png(path: &Path) -> Option<PathBuf> {
     None
 }
 
-fn normalize_event_path(path: &Path) -> PathBuf {
+pub(crate) fn normalize_event_path(path: &Path) -> PathBuf {
     if let Ok(path) = std::fs::canonicalize(path) {
         return path;
     }
@@ -227,7 +295,11 @@ pub async fn paste_clipboard_items(
 ) -> Result<Vec<String>, String> {
     let screenshots = screenshots.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
-        platform::paste_items(&app, &screenshots).map_err(|error| error.to_string())
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            platform::paste_items(&app, &screenshots).map_err(|error| error.to_string())
+        }))
+        .map_err(|_| "paste items panicked".to_string())
+        .and_then(|r| r)
     })
     .await
     .map_err(|error| error.to_string())?
@@ -304,7 +376,6 @@ mod platform {
         io::Cursor,
         os::windows::ffi::OsStringExt,
         path::{Path, PathBuf},
-        slice,
         sync::atomic::{AtomicU64, Ordering},
         time::{SystemTime, UNIX_EPOCH},
     };
@@ -316,20 +387,15 @@ mod platform {
     use windows::{
         core::Result as WinResult,
         Win32::{
-            Foundation::{HGLOBAL, HWND},
-            System::{
-                DataExchange::{
-                    CloseClipboard, GetClipboardData, GetClipboardSequenceNumber, OpenClipboard,
-                },
-                Memory::{GlobalLock, GlobalSize, GlobalUnlock},
+            Foundation::HWND,
+            System::DataExchange::{
+                CloseClipboard, GetClipboardData, GetClipboardSequenceNumber, OpenClipboard,
             },
             UI::Shell::{DragQueryFileW, HDROP},
         },
     };
 
-    const CF_UNICODETEXT: u32 = 13;
     const CF_HDROP: u32 = 15;
-    const MAX_TEXT_BYTES: usize = 1024 * 1024;
     const MAX_CLIPBOARD_IMAGE_BYTES: u64 = 64 * 1024 * 1024;
     const MAX_PREVIEW_SOURCE_BYTES: u64 = 32 * 1024 * 1024;
     const MAX_PREVIEW_DIMENSION: u32 = 8192;
@@ -551,43 +617,17 @@ mod platform {
     }
 
     pub fn read_text() -> WinResult<Option<(u32, Option<String>)>> {
-        unsafe {
-            if OpenClipboard(HWND::default()).is_err() {
-                return Ok(None);
-            }
-
-            let result = read_open_clipboard();
-            let close_result = CloseClipboard();
-            close_result?;
-            result
-        }
-    }
-
-    unsafe fn read_open_clipboard() -> WinResult<Option<(u32, Option<String>)>> {
-        let sequence = GetClipboardSequenceNumber();
-        let Ok(handle) = GetClipboardData(CF_UNICODETEXT) else {
-            return Ok(Some((sequence, None)));
+        // Read text via arboard first, then capture the clipboard sequence
+        // number. Capturing the sequence after the read avoids desyncing the
+        // sequence from the text when the clipboard changes concurrently.
+        let text = match Clipboard::new() {
+            Ok(mut clipboard) => clipboard.get_text().ok().filter(|t| !t.trim().is_empty()),
+            Err(_) => None,
         };
-        let memory = HGLOBAL(handle.0);
-        let size = GlobalSize(memory);
-        if !(2..=MAX_TEXT_BYTES).contains(&size) {
-            return Ok(Some((sequence, None)));
-        }
 
-        let pointer = GlobalLock(memory).cast::<u16>();
-        if pointer.is_null() {
-            return Err(windows::core::Error::from_win32());
-        }
+        let sequence = unsafe { GetClipboardSequenceNumber() };
 
-        let units = slice::from_raw_parts(pointer, size / 2);
-        let length = units
-            .iter()
-            .position(|unit| *unit == 0)
-            .unwrap_or(units.len());
-        let text = String::from_utf16_lossy(&units[..length]);
-        let _ = GlobalUnlock(memory);
-
-        Ok(Some((sequence, Some(text))))
+        Ok(Some((sequence, text)))
     }
 
     pub fn paste_items(
@@ -867,5 +907,43 @@ mod tests {
         assert!(external.exists());
 
         std::fs::remove_dir_all(directory).expect("remove test directory");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn is_png_detects_png_extension_case_insensitive() {
+        use super::is_png;
+        use std::path::PathBuf;
+        assert!(is_png(PathBuf::from("image.png").as_path()));
+        assert!(is_png(PathBuf::from("image.PNG").as_path()));
+        assert!(is_png(PathBuf::from("image.Png").as_path()));
+        assert!(!is_png(PathBuf::from("image.jpg").as_path()));
+        assert!(!is_png(PathBuf::from("image.txt").as_path()));
+        assert!(!is_png(PathBuf::from("image").as_path()));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn normalize_event_path_canonicalizes_existing_file() {
+        use super::normalize_event_path;
+        let directory =
+            std::env::temp_dir().join(format!("ridge-normalize-test-{}", std::process::id()));
+        std::fs::create_dir_all(&directory).expect("create test directory");
+        let file = directory.join("test.png");
+        std::fs::write(&file, b"test").expect("create test file");
+        let canonical = std::fs::canonicalize(&file).expect("canonicalize test file");
+        let normalized = normalize_event_path(&file);
+        assert_eq!(normalized, canonical);
+        std::fs::remove_dir_all(directory).expect("remove test directory");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn normalize_event_path_falls_back_for_missing_file() {
+        use super::normalize_event_path;
+        use std::path::PathBuf;
+        let missing = PathBuf::from("/nonexistent/path/image.png");
+        let normalized = normalize_event_path(&missing);
+        assert_eq!(normalized, missing);
     }
 }

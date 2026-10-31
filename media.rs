@@ -74,13 +74,27 @@ mod platform {
         },
     };
 
+    /// Initializes WinRT once per process. Calling RoInitialize repeatedly
+    /// on different threads can lead to inconsistent apartment state.
+    static WINRT_INIT: std::sync::Once = std::sync::Once::new();
+
     /// Joins the multithreaded apartment for the current worker thread.
     /// Errors are ignored on purpose: "already initialized" is fine.
     fn init_winrt() {
+        WINRT_INIT.call_once(|| {
+            unsafe {
+                let _ = RoInitialize(RO_INIT_MULTITHREADED);
+            }
+        });
+        // Still call on this thread in case it wasn't initialized yet.
         unsafe {
             let _ = RoInitialize(RO_INIT_MULTITHREADED);
         }
     }
+
+    /// Serializes all media/COM operations to avoid concurrent access to
+    /// WinRT/COM objects from multiple thread-pool threads.
+    static MEDIA_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
     fn is_playing(session: &Session) -> bool {
         session
@@ -104,6 +118,7 @@ mod platform {
     }
 
     pub fn current() -> Result<MediaInfo> {
+        let _guard = MEDIA_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         init_winrt();
 
         let manager = Manager::RequestAsync()?.get()?;
@@ -182,6 +197,7 @@ mod platform {
     }
 
     pub fn current_art() -> Result<Option<String>> {
+        let _guard = MEDIA_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         init_winrt();
 
         let manager = Manager::RequestAsync()?.get()?;
@@ -193,6 +209,7 @@ mod platform {
     }
 
     pub fn control(action: &str) -> Result<bool> {
+        let _guard = MEDIA_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         init_winrt();
 
         let manager = Manager::RequestAsync()?.get()?;
@@ -209,6 +226,7 @@ mod platform {
     }
 
     pub fn seek_to(position_ms: u64) -> Result<bool> {
+        let _guard = MEDIA_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         init_winrt();
         let manager = Manager::RequestAsync()?.get()?;
         let Some(session) = pick_session(&manager) else {
@@ -240,6 +258,7 @@ mod platform {
     }
 
     pub fn system_volume() -> Result<f32> {
+        let _guard = MEDIA_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         init_com()?;
         unsafe {
             let enumerator: IMMDeviceEnumerator =
@@ -257,8 +276,9 @@ mod platform {
             )));
         }
 
-        init_com()?;
+        let _guard = MEDIA_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let level = level.clamp(0.0, 1.0);
+        init_com()?;
         unsafe {
             let enumerator: IMMDeviceEnumerator =
                 CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL)?;
@@ -305,19 +325,29 @@ mod platform {
 /// (UI) thread.
 #[tauri::command]
 pub async fn get_current_media() -> Result<MediaInfo, String> {
-    let joined =
-        tauri::async_runtime::spawn_blocking(|| platform::current().map_err(|e| e.to_string()))
-            .await
-            .map_err(|e| e.to_string())?;
+    let joined = tauri::async_runtime::spawn_blocking(|| {
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            platform::current().map_err(|e| e.to_string())
+        }))
+        .map_err(|_| "media query panicked".to_string())
+        .and_then(|r| r)
+    })
+    .await
+    .map_err(|e| e.to_string())?;
     joined
 }
 
 #[tauri::command]
 pub async fn get_current_media_art() -> Result<Option<String>, String> {
-    let joined =
-        tauri::async_runtime::spawn_blocking(|| platform::current_art().map_err(|e| e.to_string()))
-            .await
-            .map_err(|e| e.to_string())?;
+    let joined = tauri::async_runtime::spawn_blocking(|| {
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            platform::current_art().map_err(|e| e.to_string())
+        }))
+        .map_err(|_| "media art query panicked".to_string())
+        .and_then(|r| r)
+    })
+    .await
+    .map_err(|e| e.to_string())?;
     joined
 }
 
@@ -326,7 +356,11 @@ pub async fn get_current_media_art() -> Result<Option<String>, String> {
 #[tauri::command]
 pub async fn media_control(action: String) -> Result<bool, String> {
     let joined = tauri::async_runtime::spawn_blocking(move || {
-        platform::control(&action).map_err(|e| e.to_string())
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            platform::control(&action).map_err(|e| e.to_string())
+        }))
+        .map_err(|_| "media control panicked".to_string())
+        .and_then(|r| r)
     })
     .await
     .map_err(|e| e.to_string())?;
@@ -335,29 +369,44 @@ pub async fn media_control(action: String) -> Result<bool, String> {
 
 #[tauri::command]
 pub async fn media_seek_to(position_ms: u64) -> Result<bool, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        platform::seek_to(position_ms).map_err(|error| error.to_string())
+    let joined = tauri::async_runtime::spawn_blocking(move || {
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            platform::seek_to(position_ms).map_err(|e| e.to_string())
+        }))
+        .map_err(|_| "media seek panicked".to_string())
+        .and_then(|r| r)
     })
     .await
-    .map_err(|error| error.to_string())?
+    .map_err(|e| e.to_string())?;
+    joined
 }
 
 #[tauri::command]
 pub async fn get_system_volume() -> Result<f32, String> {
-    tauri::async_runtime::spawn_blocking(|| {
-        platform::system_volume().map_err(|error| error.to_string())
+    let joined = tauri::async_runtime::spawn_blocking(|| {
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            platform::system_volume().map_err(|e| e.to_string())
+        }))
+        .map_err(|_| "system volume query panicked".to_string())
+        .and_then(|r| r)
     })
     .await
-    .map_err(|error| error.to_string())?
+    .map_err(|e| e.to_string())?;
+    joined
 }
 
 #[tauri::command]
 pub async fn set_system_volume(level: f32) -> Result<f32, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        platform::set_system_volume(level).map_err(|error| error.to_string())
+    let joined = tauri::async_runtime::spawn_blocking(move || {
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            platform::set_system_volume(level).map_err(|e| e.to_string())
+        }))
+        .map_err(|_| "set system volume panicked".to_string())
+        .and_then(|r| r)
     })
     .await
-    .map_err(|error| error.to_string())?
+    .map_err(|e| e.to_string())?;
+    joined
 }
 
 #[cfg(test)]

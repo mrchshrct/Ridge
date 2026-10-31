@@ -285,6 +285,11 @@ fn set_panel_expanded(
 }
 
 pub fn run() {
+    std::panic::set_hook(Box::new(|info| {
+        eprintln!("=== RIDGE PANIC (lib) ===");
+        eprintln!("{info}");
+        eprintln!("=========================");
+    }));
     tauri::Builder::default()
         .plugin(tauri_plugin_drag::init())
         .plugin(tauri_plugin_updater::Builder::new().build())

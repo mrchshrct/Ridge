@@ -355,7 +355,114 @@ export default function NotchPanel() {
   const updater = useUpdater();
 
   // Poll quickly while open, lazily while collapsed (the bar shows the track).
-  const { media, coverArt, refresh } = useMedia(expanded ? 1000 : 4000);
+  // Progress bar state lives here (not in MediaTab) so the rAF animation
+  // survives hover-driven mount/unmount of the media tab.
+  const [seekPosition, setSeekPosition] = useState(0);
+  const [isSeeking, setIsSeeking] = useState(false);
+  const [mediaError, setMediaError] = useState("");
+  const basePositionRef = useRef(0);
+  const startedAtRef = useRef(0);
+  const durationRef = useRef(0);
+  const rafRef = useRef(0);
+
+  const { media, coverArt, refresh } = useMedia(expanded ? 2000 : 4000);
+
+  const startRaf = useCallback(() => {
+    if (rafRef.current) return;
+    const tick = (now: number) => {
+      const dur = durationRef.current;
+      const pos = Math.min(dur, basePositionRef.current + (now - startedAtRef.current));
+      setSeekPosition(pos);
+      if (dur <= 0 || pos >= dur) {
+        rafRef.current = 0;
+        return;
+      }
+      rafRef.current = window.requestAnimationFrame(tick);
+    };
+    rafRef.current = window.requestAnimationFrame(tick);
+  }, []);
+
+  const stopRaf = useCallback(() => {
+    if (rafRef.current) {
+      window.cancelAnimationFrame(rafRef.current);
+      rafRef.current = 0;
+    }
+  }, []);
+
+  // Reset base position and rAF on track change or play/pause.
+  useEffect(() => {
+    if (!media) {
+      stopRaf();
+      return;
+    }
+    if (isSeeking) return;
+
+    basePositionRef.current = media.positionMs;
+    startedAtRef.current = performance.now();
+    durationRef.current = media.durationMs;
+    setSeekPosition(media.positionMs);
+
+    if (media.isPlaying && media.durationMs > media.positionMs) {
+      startRaf();
+    } else {
+      stopRaf();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [media?.sourceApp, media?.title, media?.artist, media?.durationMs, media?.isPlaying]);
+
+  // Periodically correct the base position from polled positionMs without
+  // restarting the rAF loop (avoids jumps). Only corrects on significant drift.
+  // Also handles seeking state transitions.
+  useEffect(() => {
+    if (!media) return;
+    if (isSeeking) {
+      stopRaf();
+      return;
+    }
+    const expected = basePositionRef.current + (performance.now() - startedAtRef.current);
+    const diff = media.positionMs - expected;
+    if (Math.abs(diff) > 500) {
+      basePositionRef.current = media.positionMs;
+      startedAtRef.current = performance.now();
+      durationRef.current = media.durationMs;
+      setSeekPosition(media.positionMs);
+    } else {
+      durationRef.current = media.durationMs;
+    }
+    if (media.isPlaying && media.durationMs > media.positionMs && !rafRef.current) {
+      startRaf();
+    }
+    if (!media.isPlaying) {
+      stopRaf();
+      setSeekPosition(media.positionMs);
+      basePositionRef.current = media.positionMs;
+      startedAtRef.current = performance.now();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [media?.positionMs, isSeeking]);
+
+  const handleSeek = useCallback(
+    async (position: number) => {
+      if (!media || media.durationMs <= 0) return;
+      try {
+        const accepted = await invoke<boolean>("media_seek_to", {
+          positionMs: Math.max(0, Math.min(media.durationMs, Math.round(position))),
+        });
+        setMediaError(accepted ? "" : "The player did not accept seeking");
+        if (accepted) {
+          basePositionRef.current = position;
+          startedAtRef.current = performance.now();
+          setSeekPosition(position);
+        }
+      } catch (error) {
+        console.error("media_seek_to failed:", error);
+        setMediaError("Could not seek in the current track");
+      } finally {
+        setIsSeeking(false);
+      }
+    },
+    [media],
+  );
 
   const hovering = useRef(false);
   const draggingFiles = useRef(false);
@@ -786,7 +893,7 @@ export default function NotchPanel() {
                   )}
                 </header>
                 <div className="min-h-0 flex-1">
-                  {tab === "media" && <MediaTab media={media} coverArt={coverArt} onControl={control} />}
+                  {tab === "media" && <MediaTab media={media} coverArt={coverArt} onControl={control} seekPosition={seekPosition} onSeekingChange={setIsSeeking} onSeekPositionChange={setSeekPosition} onSeek={handleSeek} mediaError={mediaError} />}
                   {tab === "clipboard" && (
                     <ClipboardTab
                       items={clipboard.items}
@@ -1130,51 +1237,21 @@ function MediaTab({
   media,
   coverArt,
   onControl,
+  seekPosition,
+  onSeekingChange,
+  onSeekPositionChange,
+  onSeek,
+  mediaError,
 }: {
   media: MediaInfo | null;
   coverArt: string | null;
   onControl: (action: MediaAction) => void;
+  seekPosition: number;
+  onSeekingChange: (value: boolean) => void;
+  onSeekPositionChange: (value: number) => void;
+  onSeek: (position: number) => void;
+  mediaError: string;
 }) {
-  const [seekPosition, setSeekPosition] = useState(0);
-  const [isSeeking, setIsSeeking] = useState(false);
-  const [mediaError, setMediaError] = useState("");
-
-  useEffect(() => {
-    if (!media || isSeeking) return;
-
-    const basePosition = media.positionMs;
-    const startedAt = performance.now();
-    setSeekPosition(basePosition);
-
-    if (!media.isPlaying || media.durationMs <= basePosition) return;
-
-    let frame = 0;
-    const updatePosition = (now: number) => {
-      const elapsed = now - startedAt;
-      const position = Math.min(media.durationMs, basePosition + elapsed);
-      setSeekPosition(position);
-      if (position >= media.durationMs) return;
-      frame = window.requestAnimationFrame(updatePosition);
-    };
-    frame = window.requestAnimationFrame(updatePosition);
-    return () => window.cancelAnimationFrame(frame);
-  }, [media?.positionMs, media?.durationMs, media?.isPlaying, isSeeking]);
-
-  const seek = async (position: number) => {
-    if (!media || media.durationMs <= 0) return;
-    try {
-      const accepted = await invoke<boolean>("media_seek_to", {
-        positionMs: Math.max(0, Math.min(media.durationMs, Math.round(position))),
-      });
-      setMediaError(accepted ? "" : "The player did not accept seeking");
-    } catch (error) {
-      console.error("media_seek_to failed:", error);
-      setMediaError("Could not seek in the current track");
-    } finally {
-      setIsSeeking(false);
-    }
-  };
-
   if (!media?.hasSession) {
     return (
       <div className="flex h-full flex-col justify-center gap-3">
@@ -1233,13 +1310,13 @@ function MediaTab({
             step={250}
             value={displayedPosition}
             disabled={media.durationMs <= 0}
-            onPointerDown={() => setIsSeeking(true)}
+            onPointerDown={() => onSeekingChange(true)}
             onChange={(event) => {
-              setIsSeeking(true);
-              setSeekPosition(Number(event.currentTarget.value));
+              onSeekingChange(true);
+              onSeekPositionChange(Number(event.currentTarget.value));
             }}
-            onPointerUp={(event) => void seek(Number(event.currentTarget.value))}
-            onKeyUp={(event) => void seek(Number(event.currentTarget.value))}
+            onPointerUp={(event) => void onSeek(Number(event.currentTarget.value))}
+            onKeyUp={(event) => void onSeek(Number(event.currentTarget.value))}
             style={{
               background: `linear-gradient(to right, rgb(161 161 170) 0%, rgb(161 161 170) ${progress}%, rgb(39 39 42) ${progress}%, rgb(39 39 42) 100%)`,
             }}

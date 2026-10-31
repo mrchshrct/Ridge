@@ -54,28 +54,13 @@ cargo fmt --all      # применить форматирование Rust
 
 По умолчанию приложение не подписано доверенным сертификatem, поэтому Windows SmartScreen предупреждает при установке.
 
-### Вариант 1: Сертификат от CA (Code Signing Certificate)
-1. Купить сертификат у CA (Sectigo, DigiCert и др.) — ~$200-400/год
-2. Экспортировать в `.pfx`, закодировать в base64:
-   ```powershell
-   [Convert]::ToBase64String([IO.File]::ReadAllBytes("codesign.pfx")) | Set-Clipboard
-   ```
-3. Добавить в GitHub Secrets: `WINDOWS_CERTIFICATE` (base64) и `WINDOWS_CERTIFICATE_PASSWORD`
+**Для личного использования (бесплатно):**
+1. При установке нажмите «Подробнее» (More info) → «Выполнить в любом случае» (Run anyway)
+2. Или: правой кнопкой по файлу → Свойства → снять галочку «Заблокировано» (Unblock)
 
-### Вариант 2: Azure Trusted Signing (~$10/мес)
-1. Создать аккаунт Azure Trusted Signing: https://learn.microsoft.com/azure/trusted-signing/
-2. Создать Trusted Signing Account и Certificate Profile
-3. Зарегистрировать приложение в Azure AD (App Registration)
-4. Добавить в GitHub Secrets:
-   - `AZURE_CLIENT_ID` — Client ID приложения
-   - `AZURE_TENANT_ID` — Tenant ID
-   - `AZURE_CLIENT_SECRET` — Client Secret
-   - `AZURE_TRUSTED_SIGNING_ACCOUNT` — имя аккаунта Trusted Signing
-   - `AZURE_TRUSTED_SIGNING_PROFILE` — имя профиля сертификата
-   - `AZURE_TRUSTED_SIGNING_ENDPOINT` — endpoint (напр. `https://eus.codesigning.azure.net`)
-5. CI автоматически подпишет `.exe` и `.msi` при наличии секретов
-
-Без секретов сборка проходит нормально, но бинарники останутся неподписанными.
+**Для публичного распространения (платно):**
+- Сертификат подписи кода от CA (~$200-400/год) или Azure Trusted Signing (~$10/мес)
+- Добавить секреты в GitHub Secrets — CI автоматически подпишет `.exe` и `.msi`
 
 - `main.tsx`, `App.tsx`, `NotchPanel.tsx`, `index.css` — React фронтенд
 - `main.rs`, `lib.rs`, `media.rs`, `clipboard.rs` — Tauri/Rust бэкенд

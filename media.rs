@@ -81,10 +81,8 @@ mod platform {
     /// Joins the multithreaded apartment for the current worker thread.
     /// Errors are ignored on purpose: "already initialized" is fine.
     fn init_winrt() {
-        WINRT_INIT.call_once(|| {
-            unsafe {
-                let _ = RoInitialize(RO_INIT_MULTITHREADED);
-            }
+        WINRT_INIT.call_once(|| unsafe {
+            let _ = RoInitialize(RO_INIT_MULTITHREADED);
         });
         // Still call on this thread in case it wasn't initialized yet.
         unsafe {

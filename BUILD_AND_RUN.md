@@ -50,7 +50,23 @@ npm audit            # проверка уязвимостей npm-зависи�
 cargo fmt --all      # применить форматирование Rust
 ```
 
-## Структура проекта
+## Code signing (Windows)
+
+По умолчанию приложение не подписано доверенным сертификatem, поэтому Windows SmartScreen предупреждает при установке.
+
+Для публикации без предупреждений:
+
+1. Получите сертификат подписи кода (Code Signing Certificate) от CA
+2. Экспортируйте в `.pfx` и закодируйте в base64:
+   ```powershell
+   [Convert]::ToBase64String([IO.File]::ReadAllBytes("codesign.pfx")) | Set-Clipboard
+   ```
+3. Добавьте в GitHub Secrets:
+   - `WINDOWS_CERTIFICATE` — base64-строка сертификата
+   - `WINDOWS_CERTIFICATE_PASSWORD` — пароль от `.pfx`
+4. CI автоматически подпишет `.exe` и `.msi` при наличии секретов (шаг `Sign Windows binaries` в `release.yml`)
+
+Без секретов сборка проходит нормально, но бинарники останутся неподписанными.
 
 - `main.tsx`, `App.tsx`, `NotchPanel.tsx`, `index.css` — React фронтенд
 - `main.rs`, `lib.rs`, `media.rs`, `clipboard.rs` — Tauri/Rust бэкенд

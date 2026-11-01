@@ -38,7 +38,7 @@ The File Shelf watches the `Screenshots` folder inside your Windows Pictures fol
 
 Get the latest Windows installer from [GitHub Releases](https://github.com/mrchshrct/Ridge/releases/latest). Choose the `.exe` setup file or the `.msi` installer.
 
-Ridge checks for signed updates from public GitHub releases. Automatic checks are optional, and Ridge asks before installing an update.
+Ridge checks public GitHub releases for updates and verifies each updater package's cryptographic signature against the public key embedded in the app before installation. This verifies the update package and is separate from Windows publisher (Authenticode) signing. Automatic checks are optional, and Ridge asks before installing an update.
 
 ## Built for Windows
 

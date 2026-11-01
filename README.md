@@ -8,13 +8,17 @@ Ridge is a small panel that lives at the top of your Windows screen. Hover to br
 
 [**Download the latest version**](https://github.com/mrchshrct/Ridge/releases/latest) · Free and open source for Windows.
 
-**No account required · Signed updates · 2.6 MiB EXE / 3.7 MiB MSI · Windows 10+**
+```
+2.6 MiB setup · 3.7 MiB MSI · signed updates · no account required · Windows 10+
+```
 
 [![CI](https://github.com/mrchshrct/Ridge/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/mrchshrct/Ridge/actions/workflows/ci.yml)
 
 <p align="center">
   <img src="screenshots/ridge-music.png" alt="Ridge media panel with album artwork, track details, and playback controls" width="767">
 </p>
+
+The screenshot shows a track playing in Chrome. Ridge reads media sessions from Windows directly, so it needs no browser extension or browser setup. What appears depends on whether the player shares its media session with Windows.
 
 ## Made to stay out of your way
 

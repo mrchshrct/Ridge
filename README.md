@@ -8,7 +8,7 @@ Ridge is a small panel that lives at the top of your Windows screen. Hover to br
 
 [**Download the latest version**](https://github.com/mrchshrct/Ridge/releases/latest) · Free and open source for Windows.
 
-**Windows 10+ · 620 × 260 panel · Signed updates · EXE + MSI**
+**No account required · Signed updates · 2.6 MiB EXE / 3.7 MiB MSI · Windows 10+**
 
 [![CI](https://github.com/mrchshrct/Ridge/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/mrchshrct/Ridge/actions/workflows/ci.yml)
 

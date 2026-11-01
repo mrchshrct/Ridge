@@ -214,6 +214,7 @@ function useUpdater() {
   const [updateStatus, setUpdateStatus] = useState("Update status is not checked yet.");
   const [availableUpdate, setAvailableUpdate] = useState<Update | null>(null);
   const availableUpdateRef = useRef<Update | null>(null);
+  const installingRef = useRef(false);
 
   const checkForUpdates = useCallback(async () => {
     setIsChecking(true);
@@ -250,6 +251,8 @@ function useUpdater() {
   }, []);
 
   const installUpdate = useCallback(async (update: Update) => {
+    if (installingRef.current) return;
+    installingRef.current = true;
     setIsInstalling(true);
     setUpdateStatus(`Downloading Ridge ${update.version}...`);
     try {
@@ -259,6 +262,7 @@ function useUpdater() {
       console.error("Update installation failed:", error);
       setUpdateStatus("Could not install the update. Please try again.");
       setIsInstalling(false);
+      installingRef.current = false;
     }
   }, []);
 
@@ -1224,10 +1228,11 @@ function SettingsTab({
               <div className="flex gap-1.5">
                 <button
                   type="button"
+                  disabled={isInstalling}
                   onClick={() => onConfirmInstall(availableUpdate)}
-                  className="flex-1 rounded-md bg-sky-500/20 px-2 py-1 text-[11px] font-medium text-sky-100 transition-colors hover:bg-sky-500/30"
+                  className="flex-1 rounded-md bg-sky-500/20 px-2 py-1 text-[11px] font-medium text-sky-100 transition-colors hover:bg-sky-500/30 disabled:cursor-wait disabled:opacity-50"
                 >
-                  Confirm
+                  {isInstalling ? "Installing..." : "Confirm"}
                 </button>
                 <button
                   type="button"

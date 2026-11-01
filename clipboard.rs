@@ -616,18 +616,22 @@ mod platform {
         Ok(paths)
     }
 
-    pub fn read_text() -> WinResult<Option<(u32, Option<String>)>> {
-        // Read text via arboard first, then capture the clipboard sequence
-        // number. Capturing the sequence after the read avoids desyncing the
-        // sequence from the text when the clipboard changes concurrently.
-        let text = match Clipboard::new() {
-            Ok(mut clipboard) => clipboard.get_text().ok().filter(|t| !t.trim().is_empty()),
-            Err(_) => None,
+    pub fn read_text() -> Result<Option<(u32, Option<String>)>, String> {
+        let sequence_before = unsafe { GetClipboardSequenceNumber() };
+        let mut clipboard = Clipboard::new().map_err(|error| error.to_string())?;
+        let text = match clipboard.get_text() {
+            Ok(text) => Some(text),
+            Err(arboard::Error::ContentNotAvailable) => None,
+            Err(error) => return Err(error.to_string()),
         };
-
-        let sequence = unsafe { GetClipboardSequenceNumber() };
-
-        Ok(Some((sequence, text)))
+        let sequence_after = unsafe { GetClipboardSequenceNumber() };
+        if sequence_before != sequence_after {
+            return Ok(None);
+        }
+        Ok(Some((
+            sequence_after,
+            text.filter(|text| !text.trim().is_empty()),
+        )))
     }
 
     pub fn paste_items(

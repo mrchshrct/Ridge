@@ -11,6 +11,8 @@ permissions:
 jobs:
   release:
     runs-on: windows-latest
+    env:
+      HAS_AZURE_SIGNING: ${{ secrets.AZURE_CLIENT_ID != '' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -66,19 +68,17 @@ jobs:
 
       # --- Azure Trusted Signing (Windows code signing, ~$10/mo) ---
       # Requires: Azure Trusted Signing account + certificate profile
-      # Secrets: AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_CLIENT_SECRET,
+      # Secrets: AZURE_CREDENTIALS, AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_CLIENT_SECRET,
       #          AZURE_TRUSTED_SIGNING_ACCOUNT, AZURE_TRUSTED_SIGNING_PROFILE,
       #          AZURE_TRUSTED_SIGNING_ENDPOINT
       - name: Azure login
-        if: ${{ secrets.AZURE_CLIENT_ID != '' }}
+        if: ${{ env.HAS_AZURE_SIGNING == 'true' }}
         uses: azure/login@v2
         with:
-          client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
 
       - name: Sign Windows binaries with Azure Trusted Signing
-        if: ${{ secrets.AZURE_CLIENT_ID != '' }}
+        if: ${{ env.HAS_AZURE_SIGNING == 'true' }}
         uses: azure/trusted-signing-action@v0.3.0
         with:
           azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}

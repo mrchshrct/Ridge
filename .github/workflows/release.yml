@@ -11,8 +11,6 @@ permissions:
 jobs:
   release:
     runs-on: windows-latest
-    env:
-      HAS_AZURE_SIGNING: ${{ secrets.AZURE_CLIENT_ID != '' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -65,33 +63,6 @@ jobs:
         run: npm run tauri -- build
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-
-      # --- Azure Trusted Signing (Windows code signing, ~$10/mo) ---
-      # Requires: Azure Trusted Signing account + certificate profile
-      # Secrets: AZURE_CREDENTIALS, AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_CLIENT_SECRET,
-      #          AZURE_TRUSTED_SIGNING_ACCOUNT, AZURE_TRUSTED_SIGNING_PROFILE,
-      #          AZURE_TRUSTED_SIGNING_ENDPOINT
-      - name: Azure login
-        if: ${{ env.HAS_AZURE_SIGNING == 'true' }}
-        uses: azure/login@v2
-        with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
-
-      - name: Sign Windows binaries with Azure Trusted Signing
-        if: ${{ env.HAS_AZURE_SIGNING == 'true' }}
-        uses: azure/trusted-signing-action@v0.3.0
-        with:
-          azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          azure-client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
-          endpoint: ${{ secrets.AZURE_TRUSTED_SIGNING_ENDPOINT }}
-          trusted-signing-account-name: ${{ secrets.AZURE_TRUSTED_SIGNING_ACCOUNT }}
-          certificate-profile-name: ${{ secrets.AZURE_TRUSTED_SIGNING_PROFILE }}
-          files-folder: target\release\bundle
-          files-folder-filter: exe,msi
-          file-digest: SHA256
-          timestamp-rfc3161: http://timestamp.acs.microsoft.com
-          timestamp-digest: SHA256
 
       - name: Prepare release assets
         shell: pwsh
